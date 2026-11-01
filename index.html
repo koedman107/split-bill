@@ -516,6 +516,33 @@
                 </div>
             `;
 
+            // 平攤人員完全相同的花費歸為一組，列出總金額與每人平均
+            const groups = {};
+            expenses.forEach(exp => {
+                const people = [...new Set(exp.splitWith)].sort((a, b) => members.indexOf(a) - members.indexOf(b));
+                const key = JSON.stringify(people);
+                if (!groups[key]) groups[key] = { people, total: 0, count: 0 };
+                groups[key].total += exp.amount;
+                groups[key].count++;
+            });
+
+            html += `<div class="mb-3 space-y-1.5">
+                <div class="text-xs text-indigo-300 font-semibold">平攤小計</div>`;
+            Object.values(groups).forEach(g => {
+                const perPerson = g.total / g.people.length;
+                html += `
+                    <div class="bg-indigo-950/30 px-3 py-2 rounded-lg border border-indigo-700/30 text-xs">
+                        <div class="text-indigo-200">${g.people.map(esc).join(', ')} (${g.people.length}人，${g.count} 筆)</div>
+                        <div class="flex justify-between mt-0.5">
+                            <span>共 <strong class="text-white">$${g.total.toLocaleString()}</strong></span>
+                            <span>每人 <strong class="text-yellow-300">$${perPerson.toLocaleString(undefined, { maximumFractionDigits: 1 })}</strong></span>
+                        </div>
+                    </div>
+                `;
+            });
+            html += `</div>
+                <div class="text-xs text-indigo-300 font-semibold mb-1.5">轉帳方式</div>`;
+
             if (transactions.length === 0) {
                 html += `<p class="text-emerald-300 font-medium text-center py-1"><i class="fa-solid fa-circle-check"></i> 大家費用剛好平攤，互不相欠！</p>`;
             } else {
