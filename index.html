@@ -1,442 +1,562 @@
 <!DOCTYPE html>
-<html lang="zh-TW">
+<html lang="zh-Hant">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>多人即時同步分帳小工具</title>
+    <title>聚餐出遊輕鬆分帳 (支援 Google 試算表同步)</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        :root {
-            --primary: #2563eb;
-            --primary-hover: #1d4ed8;
-            --bg-color: #f8fafc;
-            --card-bg: #ffffff;
-            --text-main: #1e293b;
-            --text-muted: #64748b;
-            --border-color: #e2e8f0;
-            --danger: #ef4444;
-            --success: #22c55e;
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
         }
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-        body { background-color: var(--bg-color); color: var(--text-main); padding: 16px; max-width: 600px; margin: 0 auto; line-height: 1.5; }
-        h1 { font-size: 1.5rem; text-align: center; margin-bottom: 16px; color: var(--primary); }
-        .card { background: var(--card-bg); border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 1px solid var(--border-color); }
-        .card h2 { font-size: 1.1rem; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
-        input, select, button { width: 100%; padding: 10px 12px; margin-top: 6px; margin-bottom: 12px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 1rem; }
-        button { background-color: var(--primary); color: white; border: none; font-weight: bold; cursor: pointer; transition: background 0.2s; }
-        button:hover { background-color: var(--primary-hover); }
-        button.secondary { background-color: #64748b; }
-        button.secondary:hover { background-color: #475569; }
-        button.danger { background-color: var(--danger); }
-        .tag-container { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
-        .tag { background: #eff6ff; color: var(--primary); padding: 4px 10px; border-radius: 16px; font-size: 0.9rem; display: flex; align-items: center; gap: 6px; border: 1px.solid #bfdbfe; }
-        .tag .remove { cursor: pointer; color: var(--danger); font-weight: bold; }
-        .flex-row { display: flex; gap: 8px; }
-        .checkbox-group { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px; margin-bottom: 12px; }
-        .checkbox-label { display: flex; align-items: center; gap: 6px; font-size: 0.95rem; cursor: pointer; }
-        .list-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border-color); font-size: 0.95rem; }
-        .list-item:last-child { border-bottom: none; }
-        .status-bar { font-size: 0.85rem; color: var(--text-muted); text-align: center; margin-bottom: 12px; background: #e2e8f0; padding: 6px; border-radius: 6px; }
-        .settlement-box { background: #f0fdf4; border: 1px solid #bbf7d0; padding: 12px; border-radius: 8px; margin-top: 8px; font-size: 0.95rem; }
-        .loading-mask { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(255,255,255,0.8); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 999; font-weight: bold; color: var(--primary); display: none; }
+        .custom-shadow {
+            box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
+        }
     </style>
 </head>
-<body>
+<body class="bg-slate-50 text-slate-800 min-h-screen pb-12">
 
-    <div id="loadingMask" class="loading-mask">
-        <div>正在與雲端同步資料，請稍候...</div>
-    </div>
+    <!-- 頂部標題列 -->
+    <header class="bg-indigo-600 text-white py-6 px-4 shadow-md text-center sticky top-0 z-10">
+        <h1 class="text-2xl font-black tracking-wide flex items-center justify-center gap-2">
+            <i class="fa-solid fa-file-invoice-dollar text-yellow-300"></i> 輕鬆分帳小幫手
+        </h1>
+        <p class="text-xs text-indigo-100 mt-1">支援 Google 試算表多人群組即時同步分帳</p>
+    </header>
 
-    <h1>💰 多人智慧分帳工具</h1>
+    <main class="max-w-md mx-auto p-4 space-y-5">
 
-    <div class="status-bar" id="statusBar">
-        狀態：檢查雲端連線中...
-    </div>
+        <!-- 訊息提示框 -->
+        <div id="toast" class="hidden fixed top-5 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white px-4 py-2.5 rounded-full text-sm shadow-xl z-50 flex items-center gap-2 transition-all duration-300">
+            <i id="toastIcon" class="fa-solid fa-circle-check text-emerald-400"></i>
+            <span id="toastMsg">提示訊息</span>
+        </div>
 
-    <!-- 雲端設定卡片 -->
-    <div class="card">
-        <h2>雲端同步設定 <button class="secondary" style="width: auto; padding: 4px 10px; font-size: 0.8rem; margin:0;" onclick="toggleConfig()">展開/收起</button></h2>
-        <div id="configSection" style="display: none;">
-            <label>Google Apps Script API 網址：</label>
-            <input type="text" id="apiUrlInput" placeholder="https://script.google.com/macros/s/.../exec">
-            <div class="flex-row">
-                <button onclick="saveApiUrl()">儲存並連線</button>
-                <button class="secondary" onclick="syncFromCloud()">立即強制同步</button>
+        <!-- 0. Google Sheet 同步設定區 -->
+        <section class="bg-indigo-50 border border-indigo-200 p-4 rounded-2xl custom-shadow">
+            <div class="flex justify-between items-center mb-2">
+                <h2 class="text-sm font-bold text-indigo-900 flex items-center gap-2">
+                    <i class="fa-solid fa-table text-emerald-600"></i> Google 試算表雲端同步
+                </h2>
+                <button onclick="toggleSyncConfig()" class="text-xs text-indigo-600 underline font-medium">設定網址</button>
             </div>
-        </div>
-    </div>
+            
+            <div id="syncConfigPanel" class="space-y-2 mt-2 hidden">
+                <p class="text-xs text-indigo-700">貼上你的 Google Apps Script Web App API 網址：</p>
+                <input type="text" id="scriptUrlInput" placeholder="https://script.google.com/macros/s/.../exec" 
+                       class="w-full border border-indigo-300 rounded-xl px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <button onclick="saveScriptUrl()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-xl text-xs font-semibold">
+                    儲存 API 連結
+                </button>
+            </div>
 
-    <!-- 成員管理 -->
-    <div class="card">
-        <h2>1. 管理成員</h2>
-        <div class="tag-container" id="memberTags"></div>
-        <div class="flex-row">
-            <input type="text" id="newMemberName" placeholder="輸入成員名字" style="margin:0;">
-            <button onclick="addMember()" style="margin:0; width: 100px;">新增</button>
-        </div>
-    </div>
+            <div class="flex items-center justify-between mt-2 pt-2 border-t border-indigo-100 text-xs">
+                <span id="syncStatus" class="text-indigo-600">狀態: 本地單機模式</span>
+                <button onclick="syncFromCloud()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-lg font-medium flex items-center gap-1 shadow-sm">
+                    <i class="fa-solid fa-arrows-rotate"></i> 立即同步
+                </button>
+            </div>
 
-    <!-- 新增花費 -->
-    <div class="card">
-        <h2>2. 記一筆花費</h2>
-        <label>消費項目名稱</label>
-        <input type="text" id="expenseDesc" placeholder="例如：晚餐、計程車、門票">
-        
-        <label>總金額 (TWD)</label>
-        <input type="number" id="expenseAmount" placeholder="0">
+            <button id="shareLinkBtn" onclick="copyShareLink()" class="hidden w-full mt-2 bg-white hover:bg-indigo-100 border border-indigo-300 text-indigo-700 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5">
+                <i class="fa-solid fa-link"></i> 複製分享連結 (含 API，對方免設定)
+            </button>
+        </section>
 
-        <label>誰先墊付？</label>
-        <select id="expensePayer"></select>
+        <!-- 1. 參與成員管理 -->
+        <section class="bg-white p-5 rounded-2xl custom-shadow border border-slate-100">
+            <div class="flex justify-between items-center mb-3">
+                <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-users text-indigo-500"></i> 1. 參與成員
+                </h2>
+                <span id="memberCount" class="text-xs font-semibold bg-indigo-50 text-indigo-600 px-2.5 py-1 rounded-full">0 人</span>
+            </div>
 
-        <label>參與分攤人員 (勾選代表有份)</label>
-        <div class="checkbox-group" id="expenseSplitters"></div>
+            <div class="flex gap-2 mb-3">
+                <input type="text" id="memberName" placeholder="輸入成員名字 (例如: 小明)" 
+                       class="flex-1 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <button onclick="addMember()" 
+                        class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold">
+                    新增
+                </button>
+            </div>
 
-        <button onclick="addExpense()">新增這筆花費</button>
-    </div>
+            <div id="memberList" class="flex flex-wrap gap-2 min-h-[32px] items-center">
+                <span class="text-xs text-slate-400 italic">請先新增參與本次消費的人員...</span>
+            </div>
+        </section>
 
-    <!-- 記帳明細 -->
-    <div class="card">
-        <h2>3. 花費明細列表</h2>
-        <div id="expenseList">
-            <p style="color: var(--text-muted); text-align: center;">目前尚無花費紀錄</p>
-        </div>
-    </div>
+        <!-- 2. 新增花費紀錄 -->
+        <section class="bg-white p-5 rounded-2xl custom-shadow border border-slate-100">
+            <h2 class="text-base font-bold text-slate-800 mb-3 flex items-center gap-2">
+                <i class="fa-solid fa-cart-plus text-emerald-500"></i> 2. 新增花費
+            </h2>
+            
+            <div class="space-y-3.5">
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">消費項目</label>
+                    <input type="text" id="expTitle" placeholder="例如: 晚餐、車資" 
+                           class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
 
-    <!-- 結算結果 -->
-    <div class="card" style="border-color: #22c55e;">
-        <h2 style="color: #15803d;">4. 智慧結算與轉帳建議</h2>
-        <div id="settlementResult">
-            <p style="color: var(--text-muted); text-align: center;">請先新增成員與花費</p>
-        </div>
-        <button onclick="copySettlement()" style="background-color: #22c55e; margin-top: 12px;">📋 複製結算結果至 LINE 群組</button>
-    </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">金額 ($)</label>
+                    <input type="number" id="expAmount" min="0" placeholder="0" 
+                           class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold text-slate-700">
+                </div>
 
-<script>
-    let appData = {
-        lastUpdated: 0,
-        members: [],
-        expenses: []
-    };
-    let apiUrl = "";
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">誰先墊錢的？</label>
+                    <select id="expPayer" class="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium">
+                        <option value="">-- 請先新增成員 --</option>
+                    </select>
+                </div>
 
-    window.onload = async function() {
-        // 1. 讀取網址帶入的 api 參數
-        const urlParams = new URLSearchParams(window.location.search);
-        const urlApi = urlParams.get('api');
-        
-        if (urlApi) {
-            apiUrl = urlApi;
-            localStorage.setItem('split_bill_api', apiUrl);
-            document.getElementById('apiUrlInput').value = apiUrl;
-        } else {
-            apiUrl = localStorage.getItem('split_bill_api') || "";
-            document.getElementById('apiUrlInput').value = apiUrl;
-        }
+                <div>
+                    <div class="flex justify-between items-center mb-1">
+                        <label class="block text-xs font-medium text-slate-500">平攤人員</label>
+                        <button type="button" onclick="toggleSelectAllMembers()" class="text-xs text-indigo-600 hover:text-indigo-800 font-medium">全選 / 反選</button>
+                    </div>
+                    <div id="splitCheckboxes" class="flex flex-wrap gap-2.5 p-3 border border-slate-100 rounded-xl bg-slate-50 min-h-[42px] items-center">
+                        <span class="text-xs text-slate-400 italic">請先新增成員...</span>
+                    </div>
+                </div>
 
-        // 2. 載入時強制自動先向雲端抓取最新資料 (Cloud-First)
-        if (apiUrl) {
-            await syncFromCloud(true); // 帶入靜默初始化參數
-        } else {
-            // 沒有 API 則讀取本機備份
-            const local = localStorage.getItem('split_bill_data');
-            if (local) {
-                try { appData = JSON.parse(local); } catch(e) {}
-            }
-            updateStatusBar("離線模式 (尚未設定 Google 試算表 API)");
-            updateUI();
-        }
-    };
+                <button onclick="addExpense()" 
+                        class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl text-sm font-bold shadow-md hover:shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-plus"></i> 加入這筆花費
+                </button>
+            </div>
+        </section>
 
-    function toggleConfig() {
-        const sec = document.getElementById('configSection');
-        sec.style.display = sec.style.display === 'none' ? 'block' : 'none';
-    }
+        <!-- 3. 花費明細 -->
+        <section class="bg-white p-5 rounded-2xl custom-shadow border border-slate-100">
+            <div class="flex justify-between items-center mb-3">
+                <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-receipt text-amber-500"></i> 3. 花費明細
+                </h2>
+                <button onclick="clearAllExpenses()" class="text-xs text-slate-400 hover:text-red-500 transition-colors">
+                    清空明細
+                </button>
+            </div>
 
-    function saveApiUrl() {
-        apiUrl = document.getElementById('apiUrlInput').value.trim();
-        localStorage.setItem('split_bill_api', apiUrl);
-        alert('API 網址已儲存！');
-        syncFromCloud();
-    }
+            <div id="expenseList" class="space-y-2.5">
+                <div class="text-center py-6 text-slate-400 text-sm">
+                    <i class="fa-solid fa-ghost text-2xl mb-1 text-slate-300 block"></i>
+                    尚無花費紀錄
+                </div>
+            </div>
+        </section>
 
-    function updateStatusBar(text) {
-        document.getElementById('statusBar').innerText = "狀態：" + text;
-    }
+        <!-- 4. 結算結果 -->
+        <section class="bg-gradient-to-br from-indigo-900 to-slate-900 text-white p-5 rounded-2xl shadow-xl relative overflow-hidden">
+            <h2 class="text-base font-bold mb-3 flex items-center gap-2 text-indigo-200">
+                <i class="fa-solid fa-scale-balanced text-yellow-400"></i> 4. 最終結算
+            </h2>
 
-    function showLoading(show) {
-        document.getElementById('loadingMask').style.display = show ? 'flex' : 'none';
-    }
+            <div id="settlementResult" class="space-y-2 text-sm mb-4 min-h-[60px] flex flex-col justify-center">
+                <p class="text-indigo-200/60 text-center py-2">輸入成員與花費後，自動計算最佳轉帳方案</p>
+            </div>
 
-    // 從雲端同步資料 (GET)
-    async function syncFromCloud(isInitial = false) {
-        if (!apiUrl) {
-            if (!isInitial) alert('請先設定 Google Apps Script API 網址！');
-            return;
-        }
+            <button onclick="copyResult()" 
+                    class="w-full bg-indigo-500 hover:bg-indigo-400 active:bg-indigo-600 text-white py-3 rounded-xl text-sm font-bold transition-all shadow-lg flex items-center justify-center gap-2">
+                <i class="fa-regular fa-copy"></i> 複製結算結果至 LINE 群組
+            </button>
+        </section>
 
-        if (!isInitial) showLoading(true);
-        updateStatusBar("正在向雲端抓取最新資料...");
+    </main>
 
-        try {
-            const response = await fetch(apiUrl);
-            const cloudData = await response.json();
+    <script>
+        let members = [];
+        let expenses = [];
+        let scriptUrl = "";
 
-            if (cloudData && cloudData.members) {
-                // 如果雲端有資料，且雲端時間戳大於或等於本地
-                appData = cloudData;
-                localStorage.setItem('split_bill_data', JSON.stringify(appData));
-                updateStatusBar("已成功同步雲端最新資料 (自動更新)");
+        window.onload = function() {
+            // 自動解析網址列是否帶有 ?api= 參數
+            const urlParams = new URLSearchParams(window.location.search);
+            const apiFromUrl = urlParams.get('api');
+
+            if (apiFromUrl) {
+                scriptUrl = apiFromUrl;
+                localStorage.setItem('split_script_url', scriptUrl);
+                document.getElementById('scriptUrlInput').value = scriptUrl;
+                document.getElementById('syncStatus').innerText = "狀態: 雲端同步模式 (網址自動載入)";
             } else {
-                updateStatusBar("雲端目前無資料，已載入預設狀態");
-            }
-        } catch (error) {
-            console.error(error);
-            updateStatusBar("連線雲端失敗，目前使用本地暫存資料");
-            const local = localStorage.getItem('split_bill_data');
-            if (local) { try { appData = JSON.parse(local); } catch(e) {} }
-        } finally {
-            if (!isInitial) showLoading(false);
-            updateUI();
-        }
-    }
-
-    // 儲存資料至雲端與本地 (POST)，附帶版本時間檢查防呆
-    async function saveData() {
-        // 先更新本地備份與時間戳
-        appData.lastUpdated = Date.now();
-        localStorage.setItem('split_bill_data', JSON.stringify(appData));
-
-        if (!apiUrl) {
-            updateUI();
-            return;
-        }
-
-        showLoading(true);
-        updateStatusBar("正在上傳更新至雲端...");
-
-        try {
-            // 【防呆機制】：上傳前先偷偷抓一次雲端最新狀態比對時間戳
-            const checkRes = await fetch(apiUrl);
-            const cloudData = await checkRes.json();
-
-            if (cloudData && cloudData.lastUpdated && cloudData.lastUpdated > appData.lastUpdated) {
-                showLoading(false);
-                let overwrite = confirm("⚠️ 偵測到其他成員剛剛在雲端更新了資料！\n\n點擊「確定」將載入雲端最新資料（您剛才未儲存的操作可能會遺失），點擊「取消」強制覆蓋雲端。");
-                if (overwrite) {
-                    appData = cloudData;
-                    localStorage.setItem('split_bill_data', JSON.stringify(appData));
-                    updateUI();
-                    updateStatusBar("已自動切換為雲端最新資料");
-                    return;
+                const savedUrl = localStorage.getItem('split_script_url');
+                if (savedUrl) { 
+                    scriptUrl = savedUrl; 
+                    document.getElementById('scriptUrlInput').value = scriptUrl;
+                    document.getElementById('syncStatus').innerText = "狀態: 雲端同步模式";
                 }
             }
 
-            // 發送 POST 覆蓋上傳
-            await fetch(apiUrl, {
-                method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'text/plain' },
-                body: JSON.stringify(appData)
-            });
+            const savedMembers = localStorage.getItem('split_members');
+            const savedExpenses = localStorage.getItem('split_expenses');
 
-            updateStatusBar("資料已同步上傳至雲端");
-        } catch (error) {
-            console.error(error);
-            updateStatusBar("雲端同步上傳失敗，已存於本地");
-        } finally {
-            showLoading(false);
-            updateUI();
-        }
-    }
+            if (savedMembers) { try { members = JSON.parse(savedMembers); } catch(e){} }
+            if (savedExpenses) { try { expenses = normalizeExpenses(JSON.parse(savedExpenses)); } catch(e){} }
 
-    function addMember() {
-        const nameInput = document.getElementById('newMemberName');
-        const name = nameInput.value.trim();
-        if (!name) return alert('請輸入成員名字');
-        if (appData.members.includes(name)) return alert('此成員已存在');
+            updateShareButton();
 
-        appData.members.push(name);
-        nameInput.value = '';
-        saveData();
-    }
-
-    function removeMember(name) {
-        if (!confirm(`確定要刪除成員「${name}」嗎？`)) return;
-        appData.members = appData.members.filter(m => m !== name);
-        // 同時清除相關花費或保留看需求
-        saveData();
-    }
-
-    function addExpense() {
-        const desc = document.getElementById('expenseDesc').value.trim();
-        const amount = parseFloat(document.getElementById('expenseAmount').value);
-        const payer = document.getElementById('expensePayer').value;
-        const checkboxes = document.querySelectorAll('input[name="splitter"]:checked');
-        const splitters = Array.from(checkboxes).map(cb => cb.value);
-
-        if (!desc) return alert('請輸入消費項目');
-        if (isNaN(amount) || amount <= 0) return alert('請輸入有效的金額');
-        if (!payer) return alert('請選擇付款人');
-        if (splitters.length === 0) return alert('請至少選擇一位分攤人員');
-
-        const newExpense = {
-            id: Date.now(),
-            desc,
-            amount,
-            payer,
-            splitters
+            // 先只顯示本機資料，不寫入雲端，避免舊資料覆蓋別人剛更新的雲端資料
+            updateUI(false);
+            if (scriptUrl) syncFromCloud();
         };
 
-        appData.expenses.push(newExpense);
-        document.getElementById('expenseDesc').value = '';
-        document.getElementById('expenseAmount').value = '';
-        saveData();
-    }
-
-    function removeExpense(id) {
-        appData.expenses = appData.expenses.filter(e => e.id !== id);
-        saveData();
-    }
-
-    function updateUI() {
-        // 1. 渲染成員標籤
-        const tagContainer = document.getElementById('memberTags');
-        tagContainer.innerHTML = appData.members.length === 0 ? '<span style="color:var(--text-muted);font-size:0.9rem;">尚未新增成員</span>' : '';
-        appData.members.forEach(m => {
-            tagContainer.innerHTML += `<div class="tag">${m} <span class="remove" onclick="removeMember('${m}')">&times;</span></div>`;
-        });
-
-        // 2. 渲染付款人下拉選單
-        const payerSelect = document.getElementById('expensePayer');
-        payerSelect.innerHTML = '<option value="">-- 選擇付款人 --</option>';
-        appData.members.forEach(m => {
-            payerSelect.innerHTML += `<option value="${m}">${m}</option>`;
-        });
-
-        // 3. 渲染分攤勾選框
-        const splitterGroup = document.getElementById('expenseSplitters');
-        splitterGroup.innerHTML = appData.members.length === 0 ? '<span style="color:var(--text-muted);font-size:0.9rem;">請先新增成員</span>' : '';
-        appData.members.forEach(m => {
-            splitterGroup.innerHTML += `
-                <label class="checkbox-label">
-                    <input type="checkbox" name="splitter" value="${m}" checked> ${m}
-                </label>
-            `;
-        });
-
-        // 4. 渲染花費明細列表
-        const expenseList = document.getElementById('expenseList');
-        if (appData.expenses.length === 0) {
-            expenseList.innerHTML = '<p style="color: var(--text-muted); text-align: center;">目前尚無花費紀錄</p>';
-        } else {
-            expenseList.innerHTML = '';
-            appData.expenses.forEach(e => {
-                expenseList.innerHTML += `
-                    <div class="list-item">
-                        <div>
-                            <strong>${e.desc}</strong> - $${e.amount} <br>
-                            <small style="color:var(--text-muted);">墊付：${e.payer} | 分攤：${e.splitters.join(', ')}</small>
-                        </div>
-                        <button class="danger" style="width:auto; padding:4px 8px; margin:0; font-size:0.8rem;" onclick="removeExpense(${e.id})">刪除</button>
-                    </div>
-                `;
-            });
+        function toggleSyncConfig() {
+            const panel = document.getElementById('syncConfigPanel');
+            panel.classList.toggle('hidden');
         }
 
-        // 5. 計算結算結果
-        calculateSettlement();
-    }
-
-    function calculateSettlement() {
-        const resultBox = document.getElementById('settlementResult');
-        if (appData.members.length === 0 || appData.expenses.length === 0) {
-            resultBox.innerHTML = '<p style="color: var(--text-muted); text-align: center;">請先新增成員與花費</p>';
-            return;
+        function saveScriptUrl() {
+            const url = document.getElementById('scriptUrlInput').value.trim();
+            scriptUrl = url;
+            localStorage.setItem('split_script_url', url);
+            showToast(url ? '已儲存雲端 API 連結！' : '已關閉雲端同步');
+            document.getElementById('syncStatus').innerText = url ? "狀態: 雲端同步模式" : "狀態: 本地單機模式";
+            toggleSyncConfig();
+            updateShareButton();
+            if (url) syncFromCloud();
         }
 
-        // 計算每人淨額 (Balance)
-        let balances = {};
-        appData.members.forEach(m => balances[m] = 0);
-
-        appData.expenses.forEach(e => {
-            const share = e.amount / e.splitters.length;
-            balances[e.payer] += e.amount; // 墊付者增加餘額
-            e.splitters.forEach(s => {
-                if (balances[s] !== undefined) {
-                    balances[s] -= share; // 分攤者扣除應付金額
-                }
-            });
-        });
-
-        // 分離債權人與債務人
-        let debtors = [];
-        let creditors = [];
-
-        for (let m in balances) {
-            let val = Math.round(balances[m] * 100) / 100;
-            if (val < -0.01) debtors.push({ name: m, amount: -val });
-            else if (val > 0.01) creditors.push({ name: m, amount: val });
+        // 有設定 API 時才顯示「複製分享連結」按鈕
+        function updateShareButton() {
+            document.getElementById('shareLinkBtn').classList.toggle('hidden', !scriptUrl);
         }
 
-        // 貪婪演算法計算最少轉帳筆數
-        let transactions = [];
-        let i = 0, j = 0;
-        while (i < debtors.length && j < creditors.length) {
-            let debt = debtors[i];
-            let cred = creditors[j];
-            let transferAmount = Math.min(debt.amount, cred.amount);
-            transferAmount = Math.round(transferAmount * 100) / 100;
+        function copyShareLink() {
+            if (!scriptUrl) return;
 
-            if (transferAmount > 0) {
-                transactions.push(`👉 **${debt.name}** 轉帳 **$${transferAmount}** 給 **${cred.name}**`);
+            // 以目前頁面網址為基礎，帶上 ?api= 參數
+            const link = new URL(window.location.href);
+            link.hash = '';
+            link.search = '';
+            link.searchParams.set('api', scriptUrl);
+            const shareUrl = link.toString();
+
+            const isLocalFile = window.location.protocol === 'file:';
+            const onCopied = () => showToast(isLocalFile
+                ? '已複製，但目前是本機檔案，別人無法開啟此連結'
+                : '已複製分享連結！貼給朋友即可直接同步', isLocalFile);
+
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(shareUrl).then(onCopied).catch(() => fallbackCopy(shareUrl, onCopied));
+            } else {
+                fallbackCopy(shareUrl, onCopied);
+            }
+        }
+
+        function fallbackCopy(text, onCopied) {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            document.body.appendChild(textArea);
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                onCopied();
+            } catch (err) {
+                showToast('複製失敗', true);
+            }
+            document.body.removeChild(textArea);
+        }
+
+        function saveLocal() {
+            localStorage.setItem('split_members', JSON.stringify(members));
+            localStorage.setItem('split_expenses', JSON.stringify(expenses));
+        }
+
+        function saveData() {
+            saveLocal();
+
+            // 如果有設定 Google App Script，寫入雲端
+            if (scriptUrl) {
+                fetch(scriptUrl, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ members, expenses })
+                }).then(() => {
+                    document.getElementById('syncStatus').innerText = "狀態: 雲端已同步 " + new Date().toLocaleTimeString();
+                }).catch(err => {
+                    console.error("同步失敗", err);
+                });
+            }
+        }
+
+        function syncFromCloud() {
+            if (!scriptUrl) {
+                showToast('請先點擊「設定網址」設定 Google 試算表 API 連結', true);
+                return;
             }
 
-            debt.amount -= transferAmount;
-            cred.amount -= transferAmount;
-
-            if (debt.amount < 0.01) i++;
-            if (cred.amount < 0.01) j++;
+            document.getElementById('syncStatus').innerText = "狀態: 正在讀取雲端...";
+            fetch(scriptUrl)
+                .then(res => res.json())
+                .then(data => {
+                    if (data) {
+                        if (data.members) members = data.members;
+                        if (data.expenses) expenses = normalizeExpenses(data.expenses);
+                        saveLocal();
+                        updateUI(false); // 不觸發重複寫入
+                        document.getElementById('syncStatus').innerText = "狀態: 已成功從雲端同步！";
+                        showToast('成功同步雲端最新資料！');
+                    }
+                })
+                .catch(err => {
+                    document.getElementById('syncStatus').innerText = "狀態: 雲端讀取失敗";
+                    showToast('讀取失敗，請確認 API 網址設定正確', true);
+                });
         }
 
-        let html = '<div style="margin-bottom:8px;"><strong>各成員收付淨額：</strong><br>';
-        for (let m in balances) {
-            let b = Math.round(balances[m] * 100) / 100;
-            let color = b > 0 ? 'color:#16a34a;' : (b < 0 ? 'color:#dc2626;' : '');
-            html += `${m}: <span style="${color}">${b > 0 ? '+' + b : b}</span><br>`;
+        // 統一花費資料格式：相容舊版欄位 (desc / splitters)，並剔除不完整的紀錄
+        function normalizeExpenses(list) {
+            if (!Array.isArray(list)) return [];
+            return list.map(exp => ({
+                title: exp.title ?? exp.desc ?? '',
+                amount: Number(exp.amount) || 0,
+                payer: exp.payer,
+                splitWith: Array.isArray(exp.splitWith) ? exp.splitWith : (Array.isArray(exp.splitters) ? exp.splitters : [])
+            })).filter(exp => exp.payer && exp.amount > 0 && exp.splitWith.length > 0);
         }
-        html += '</div><div class="settlement-box"><strong>💡 最佳化轉帳建議：</strong><br>';
-        
-        if (transactions.length === 0) {
-            html += '目前互不欠款，帳目已平衡！';
-        } else {
-            transactions.forEach(t => html += t + '<br>');
+
+        function showToast(msg, isError = false) {
+            const toast = document.getElementById('toast');
+            const toastMsg = document.getElementById('toastMsg');
+            const toastIcon = document.getElementById('toastIcon');
+
+            toastMsg.innerText = msg;
+            toastIcon.className = isError ? "fa-solid fa-triangle-exclamation text-amber-400" : "fa-solid fa-circle-check text-emerald-400";
+            toast.classList.remove('hidden');
+            setTimeout(() => toast.classList.add('hidden'), 2500);
         }
-        html += '</div>';
 
-        resultBox.innerHTML = html;
-    }
+        // 將文字轉為 HTML 安全字串，避免名字含 ' < > 等符號時破壞畫面
+        function esc(str) {
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
 
-    function copySettlement() {
-        let text = "📊 【 智慧分帳結算報告 】\n";
-        text += "--------------------------------\n";
-        
-        appData.members.forEach(m => {
-            let sum = 0;
-            appData.expenses.forEach(e => {
-                if(e.payer === m) sum += e.amount;
+        function updateUI(shouldSave = true) {
+            if (shouldSave) saveData();
+            
+            document.getElementById('memberCount').innerText = `${members.length} 人`;
+            const memberListEl = document.getElementById('memberList');
+            
+            if (members.length === 0) {
+                memberListEl.innerHTML = `<span class="text-xs text-slate-400 italic">請先新增參與本次消費的人員...</span>`;
+            } else {
+                memberListEl.innerHTML = members.map((m, index) => `
+                    <span class="bg-indigo-50 border border-indigo-100 text-indigo-700 px-3 py-1 rounded-xl text-xs font-medium flex items-center gap-1.5 shadow-sm">
+                        ${esc(m)}
+                        <button onclick="removeMember(${index})" class="text-indigo-400 hover:text-red-500 font-bold focus:outline-none">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </span>
+                `).join('');
+            }
+
+            const payerSelect = document.getElementById('expPayer');
+            if (members.length === 0) {
+                payerSelect.innerHTML = `<option value="">-- 請先新增成員 --</option>`;
+            } else {
+                const currentPayer = payerSelect.value;
+                payerSelect.innerHTML = members.map(m => `<option value="${esc(m)}">${esc(m)}</option>`).join('');
+                if (members.includes(currentPayer)) payerSelect.value = currentPayer;
+            }
+
+            const checkboxesEl = document.getElementById('splitCheckboxes');
+            if (members.length === 0) {
+                checkboxesEl.innerHTML = `<span class="text-xs text-slate-400 italic">請先新增成員...</span>`;
+            } else {
+                checkboxesEl.innerHTML = members.map(m => `
+                    <label class="inline-flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-lg border border-slate-200 text-xs font-medium cursor-pointer hover:bg-slate-100 transition-colors">
+                        <input type="checkbox" name="splitMember" value="${esc(m)}" checked class="rounded text-indigo-600 focus:ring-indigo-500">
+                        ${esc(m)}
+                    </label>
+                `).join('');
+            }
+
+            const expListEl = document.getElementById('expenseList');
+            if (expenses.length === 0) {
+                expListEl.innerHTML = `
+                    <div class="text-center py-6 text-slate-400 text-sm">
+                        <i class="fa-solid fa-ghost text-2xl mb-1 text-slate-300 block"></i>
+                        尚無花費紀錄
+                    </div>`;
+            } else {
+                expListEl.innerHTML = expenses.map((exp, index) => `
+                    <div class="flex justify-between items-center p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs">
+                        <div class="space-y-0.5">
+                            <div class="font-bold text-slate-800 text-sm">${esc(exp.title)}</div>
+                            <div class="text-slate-500">
+                                <span class="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded text-[10px] font-semibold">${esc(exp.payer)} 先付</span>
+                                分攤 (${exp.splitWith.length}人): ${exp.splitWith.map(esc).join(', ')}
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <span class="font-black text-slate-700 text-base">$${esc(exp.amount)}</span>
+                            <button onclick="removeExpense(${index})" class="text-slate-300 hover:text-red-500 text-sm transition-colors">
+                                <i class="fa-solid fa-trash-can"></i>
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            calculateSettlement();
+        }
+
+        function addMember() {
+            const input = document.getElementById('memberName');
+            const name = input.value.trim();
+            if (!name || members.includes(name)) return;
+            members.push(name);
+            input.value = '';
+            updateUI();
+        }
+
+        function removeMember(index) {
+            const name = members[index];
+            if (name === undefined) return;
+            members = members.filter(m => m !== name);
+            expenses.forEach(exp => { exp.splitWith = exp.splitWith.filter(m => m !== name); });
+            expenses = expenses.filter(exp => exp.splitWith.length > 0 && exp.payer !== name);
+            updateUI();
+        }
+
+        function toggleSelectAllMembers() {
+            const checkboxes = document.querySelectorAll('input[name="splitMember"]');
+            if (checkboxes.length === 0) return;
+            const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+            checkboxes.forEach(cb => cb.checked = !allChecked);
+        }
+
+        function addExpense() {
+            const title = document.getElementById('expTitle').value.trim();
+            const amount = parseFloat(document.getElementById('expAmount').value);
+            const payer = document.getElementById('expPayer').value;
+            const checkboxes = document.querySelectorAll('input[name="splitMember"]:checked');
+            const splitWith = Array.from(checkboxes).map(cb => cb.value);
+
+            if (!title || isNaN(amount) || amount <= 0 || !payer || splitWith.length === 0) {
+                showToast('請完整填寫項目、金額、付款人與分攤成員', true);
+                return;
+            }
+
+            expenses.push({ title, amount, payer, splitWith });
+            document.getElementById('expTitle').value = '';
+            document.getElementById('expAmount').value = '';
+            updateUI();
+        }
+
+        function removeExpense(index) {
+            expenses.splice(index, 1);
+            updateUI();
+        }
+
+        function clearAllExpenses() {
+            if (expenses.length === 0) return;
+            expenses = [];
+            updateUI();
+        }
+
+        function calculateSettlement() {
+            const resultEl = document.getElementById('settlementResult');
+            if (members.length === 0 || expenses.length === 0) {
+                resultEl.innerHTML = `<p class="text-indigo-200/60 text-center py-2">輸入成員與花費後，自動計算最佳轉帳方案</p>`;
+                return;
+            }
+
+            let balances = {};
+            members.forEach(m => balances[m] = 0);
+            let totalSpent = 0;
+
+            expenses.forEach(exp => {
+                totalSpent += exp.amount;
+                balances[exp.payer] += exp.amount;
+                const splitAmount = exp.amount / exp.splitWith.length;
+                exp.splitWith.forEach(person => { balances[person] -= splitAmount; });
             });
-        });
 
-        // 抓取畫面的結算文字轉成純文字複製
-        const box = document.getElementById('settlementResult').innerText;
-        text += box;
+            let debtors = [], creditors = [];
+            for (const [person, amount] of Object.entries(balances)) {
+                if (amount < -0.01) debtors.push({ person, amount: -amount });
+                else if (amount > 0.01) creditors.push({ person, amount });
+            }
 
-        navigator.clipboard.writeText(text).then(() => {
-            alert('已成功將結算結果複製到剪貼簿，可直接貼到 LINE 群組！');
-        }).catch(err => {
-            alert('複製失敗，請手動複製');
-        });
-    }
-</script>
+            let transactions = [];
+            let i = 0, j = 0;
+            while (i < debtors.length && j < creditors.length) {
+                const debtor = debtors[i];
+                const creditor = creditors[j];
+                const amount = Math.min(debtor.amount, creditor.amount);
 
+                transactions.push({
+                    from: debtor.person,
+                    to: creditor.person,
+                    amount: Math.round(amount)
+                });
+
+                debtor.amount -= amount;
+                creditor.amount -= amount;
+
+                if (debtor.amount < 0.01) i++;
+                if (creditor.amount < 0.01) j++;
+            }
+
+            let html = `
+                <div class="border-b border-indigo-700/60 pb-2 mb-2 flex justify-between items-center text-xs text-indigo-200">
+                    <span>總支出金額：<strong class="text-white text-sm">$${totalSpent.toLocaleString()}</strong></span>
+                    <span>項目數：${expenses.length} 筆</span>
+                </div>
+            `;
+
+            if (transactions.length === 0) {
+                html += `<p class="text-emerald-300 font-medium text-center py-1"><i class="fa-solid fa-circle-check"></i> 大家費用剛好平攤，互不相欠！</p>`;
+            } else {
+                html += `<ul class="space-y-1.5">`;
+                transactions.forEach(t => {
+                    html += `
+                        <li class="flex items-center justify-between bg-indigo-950/40 px-3 py-2 rounded-lg border border-indigo-700/40">
+                            <span class="flex items-center gap-1.5">
+                                <strong class="text-amber-300">${esc(t.from)}</strong>
+                                <i class="fa-solid fa-arrow-right text-xs text-indigo-400"></i>
+                                <strong class="text-emerald-300">${esc(t.to)}</strong>
+                            </span>
+                            <span class="font-black text-yellow-300 text-sm">$${t.amount.toLocaleString()}</span>
+                        </li>
+                    `;
+                });
+                html += `</ul>`;
+            }
+
+            resultEl.innerHTML = html;
+        }
+
+        function copyResult() {
+            if (expenses.length === 0) return;
+            const resultEl = document.getElementById('settlementResult');
+            let plainText = resultEl.innerText.replace(/\n\n+/g, '\n');
+
+            let formatMsg = `【聚餐出遊 結算清單】\n---------------------\n${plainText}\n---------------------\n來自：輕鬆分帳小幫手`;
+
+            const textArea = document.createElement("textarea");
+            textArea.value = formatMsg;
+            document.body.appendChild(textArea);
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                showToast('已複製文字！可直接貼到 LINE 群組');
+            } catch (err) {
+                showToast('複製失敗', true);
+            }
+            document.body.removeChild(textArea);
+        }
+    </script>
 </body>
 </html>
