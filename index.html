@@ -52,6 +52,23 @@
                 </button>
             </div>
 
+            <div id="groupPanel" class="hidden flex items-center gap-2 mt-2 pt-2 border-t border-indigo-100 text-xs">
+                <label for="groupSelect" class="text-indigo-900 font-semibold shrink-0"><i class="fa-solid fa-user-group text-indigo-500"></i> 群組</label>
+                <select id="groupSelect" onchange="switchGroup(this.value)" class="flex-1 min-w-0 border border-indigo-300 rounded-lg px-2 py-1.5 bg-white font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </select>
+                <button onclick="toggleNewGroupForm()" class="shrink-0 bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1.5 rounded-lg font-medium flex items-center gap-1">
+                    <i class="fa-solid fa-plus"></i> 新群組
+                </button>
+            </div>
+
+            <div id="newGroupForm" class="hidden flex gap-2 mt-2 text-xs">
+                <input type="text" id="newGroupName" placeholder="新群組名稱 (例如：日本旅遊)" maxlength="50"
+                       onkeydown="if (event.key === 'Enter') createGroup()"
+                       class="flex-1 min-w-0 border border-indigo-300 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <button id="createGroupBtn" onclick="createGroup()" class="shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg font-medium">建立</button>
+                <button onclick="toggleNewGroupForm()" class="shrink-0 text-slate-500 hover:text-slate-700 px-1.5">取消</button>
+            </div>
+
             <div class="flex items-center justify-between mt-2 pt-2 border-t border-indigo-100 text-xs">
                 <span id="syncStatus" class="text-indigo-600">狀態: 本地單機模式</span>
                 <button onclick="syncFromCloud()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-lg font-medium flex items-center gap-1 shadow-sm">
@@ -171,11 +188,14 @@
         let members = [];
         let expenses = [];
         let scriptUrl = "";
+        let currentGroup = "";   // 對應試算表分頁名稱；空字串代表第一個分頁 (舊版相容)
+        let groups = [];
 
         window.onload = function() {
-            // 自動解析網址列是否帶有 ?api= 參數
+            // 自動解析網址列是否帶有 ?api= 與 ?group= 參數
             const urlParams = new URLSearchParams(window.location.search);
             const apiFromUrl = urlParams.get('api');
+            currentGroup = urlParams.get('group') || localStorage.getItem('split_group') || '';
 
             if (apiFromUrl) {
                 scriptUrl = apiFromUrl;
@@ -191,18 +211,109 @@
                 }
             }
 
-            const savedMembers = localStorage.getItem('split_members');
-            const savedExpenses = localStorage.getItem('split_expenses');
-
-            if (savedMembers) { try { members = JSON.parse(savedMembers); } catch(e){} }
-            if (savedExpenses) { try { expenses = normalizeExpenses(JSON.parse(savedExpenses)); } catch(e){} }
-
+            loadLocal();
             updateShareButton();
 
             // 先只顯示本機資料，不寫入雲端，避免舊資料覆蓋別人剛更新的雲端資料
             updateUI(false);
-            if (scriptUrl) syncFromCloud();
+            if (scriptUrl) loadGroups().then(syncFromCloud);
         };
+
+        // 組出帶參數的 API 網址
+        function apiUrl(params) {
+            const url = new URL(scriptUrl);
+            Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+            return url.toString();
+        }
+
+        // 從雲端讀取群組清單 (即試算表的分頁名稱)
+        function loadGroups() {
+            return Promise.resolve()
+                .then(() => fetch(apiUrl({ action: 'groups' })))
+                .then(res => res.json())
+                .then(data => {
+                    if (!Array.isArray(data.groups)) {
+                        // 後端仍是舊版 (單一群組)，隱藏群組選單
+                        document.getElementById('groupPanel').classList.add('hidden');
+                        return;
+                    }
+                    groups = data.groups;
+                    if (!currentGroup && groups.length > 0) setCurrentGroup(groups[0]);
+                    renderGroupSelect();
+                })
+                .catch(err => console.error("讀取群組清單失敗", err));
+        }
+
+        function renderGroupSelect() {
+            const options = groups.includes(currentGroup) || !currentGroup ? groups : [...groups, currentGroup];
+            const select = document.getElementById('groupSelect');
+            select.innerHTML = options.map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join('');
+            select.value = currentGroup;
+            document.getElementById('groupPanel').classList.remove('hidden');
+        }
+
+        // 記住目前群組，並同步更新網址列，重新整理時仍停留在同一群組
+        function setCurrentGroup(name) {
+            currentGroup = name;
+            localStorage.setItem('split_group', name);
+            const url = new URL(window.location.href);
+            if (name) url.searchParams.set('group', name); else url.searchParams.delete('group');
+            history.replaceState(null, '', url);
+        }
+
+        function switchGroup(name, force = false) {
+            if (!force && name === currentGroup) return;
+            setCurrentGroup(name);
+            members = [];
+            expenses = [];
+            loadLocal();
+            updateUI(false);
+            syncFromCloud();
+        }
+
+        function toggleNewGroupForm() {
+            const form = document.getElementById('newGroupForm');
+            form.classList.toggle('hidden');
+            if (!form.classList.contains('hidden')) document.getElementById('newGroupName').focus();
+        }
+
+        function createGroup() {
+            if (!scriptUrl) return;
+            const input = document.getElementById('newGroupName');
+            const btn = document.getElementById('createGroupBtn');
+            const name = input.value.trim();
+            if (!name) {
+                showToast('請輸入群組名稱', true);
+                return;
+            }
+
+            btn.disabled = true;
+            btn.innerText = '建立中...';
+            document.getElementById('syncStatus').innerText = "狀態: 正在建立群組...";
+            fetch(apiUrl({ action: 'create', group: name }))
+                .then(res => res.json())
+                .then(data => {
+                    if (data.error || !data.group) {
+                        showToast(data.error || '建立失敗，請確認 Apps Script 已更新為多群組版', true);
+                        document.getElementById('syncStatus').innerText = "狀態: 建立群組失敗";
+                        return;
+                    }
+                    groups = data.groups;
+                    switchGroup(data.group, true);
+                    renderGroupSelect();
+                    input.value = '';
+                    document.getElementById('newGroupForm').classList.add('hidden');
+                    showToast(data.created ? `已建立群組「${data.group}」` : `群組「${data.group}」已存在，已切換過去`);
+                })
+                .catch(() => {
+                    document.getElementById('syncStatus').innerText = "狀態: 建立群組失敗";
+                    showToast('建立失敗，請確認網路與 API 設定', true);
+                })
+                .finally(() => {
+                    btn.disabled = false;
+                    btn.innerText = '建立';
+                });
+        }
 
         function toggleSyncConfig() {
             const panel = document.getElementById('syncConfigPanel');
@@ -217,7 +328,7 @@
             document.getElementById('syncStatus').innerText = url ? "狀態: 雲端同步模式" : "狀態: 本地單機模式";
             toggleSyncConfig();
             updateShareButton();
-            if (url) syncFromCloud();
+            if (url) loadGroups().then(syncFromCloud);
         }
 
         // 有設定 API 時才顯示「複製分享連結」按鈕
@@ -233,6 +344,7 @@
             link.hash = '';
             link.search = '';
             link.searchParams.set('api', scriptUrl);
+            if (currentGroup) link.searchParams.set('group', currentGroup);
             const shareUrl = link.toString();
 
             const isLocalFile = window.location.protocol === 'file:';
@@ -261,9 +373,22 @@
             document.body.removeChild(textArea);
         }
 
+        // 每個群組各自的本機快取；未指定群組時沿用舊版的 key
+        function localKey(name) {
+            return currentGroup ? `${name}::${currentGroup}` : name;
+        }
+
+        function loadLocal() {
+            const savedMembers = localStorage.getItem(localKey('split_members'));
+            const savedExpenses = localStorage.getItem(localKey('split_expenses'));
+
+            if (savedMembers) { try { members = JSON.parse(savedMembers); } catch(e){} }
+            if (savedExpenses) { try { expenses = normalizeExpenses(JSON.parse(savedExpenses)); } catch(e){} }
+        }
+
         function saveLocal() {
-            localStorage.setItem('split_members', JSON.stringify(members));
-            localStorage.setItem('split_expenses', JSON.stringify(expenses));
+            localStorage.setItem(localKey('split_members'), JSON.stringify(members));
+            localStorage.setItem(localKey('split_expenses'), JSON.stringify(expenses));
         }
 
         function saveData() {
@@ -275,7 +400,7 @@
                     method: 'POST',
                     mode: 'no-cors',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ members, expenses })
+                    body: JSON.stringify({ group: currentGroup, members, expenses })
                 }).then(() => {
                     document.getElementById('syncStatus').innerText = "狀態: 雲端已同步 " + new Date().toLocaleTimeString();
                 }).catch(err => {
@@ -291,9 +416,13 @@
             }
 
             document.getElementById('syncStatus').innerText = "狀態: 正在讀取雲端...";
-            fetch(scriptUrl)
+            const requestedGroup = currentGroup;
+            Promise.resolve()
+                .then(() => fetch(currentGroup ? apiUrl({ group: currentGroup }) : scriptUrl))
                 .then(res => res.json())
                 .then(data => {
+                    // 讀取期間已切換到別的群組，捨棄這次結果
+                    if (requestedGroup !== currentGroup) return;
                     if (data) {
                         if (data.members) members = data.members;
                         if (data.expenses) expenses = normalizeExpenses(data.expenses);
@@ -570,7 +699,7 @@
             const resultEl = document.getElementById('settlementResult');
             let plainText = resultEl.innerText.replace(/\n\n+/g, '\n');
 
-            let formatMsg = `【聚餐出遊 結算清單】\n---------------------\n${plainText}\n---------------------\n來自：輕鬆分帳小幫手`;
+            let formatMsg = `【${currentGroup || '聚餐出遊'} 結算清單】\n---------------------\n${plainText}\n---------------------\n來自：輕鬆分帳小幫手`;
 
             const textArea = document.createElement("textarea");
             textArea.value = formatMsg;
